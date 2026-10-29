@@ -20,7 +20,7 @@ export class TenantProvisionerService {
   constructor(private readonly config: ConfigService) {}
 
   credentialsFor(subdomain: string): TenantDbCredentials {
-    const name = `tenant_${subdomain.replace(/-/g, '_')}`;
+    const name = `${this.config.getOrThrow<string>('TENANT_DB_NAME_PREFIX')}${subdomain.replace(/-/g, '_')}`;
     return { dbName: name, dbUser: name, password: randomBytes(24).toString('hex') };
   }
 

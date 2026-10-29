@@ -1,14 +1,24 @@
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
+import 'reflect-metadata';
 import './env';
-import { purgeE2eTenants } from '../support/db';
+import { seedControl } from '../../src/cli/seed-control';
+import { dropE2eDatabases, withAdmin } from '../support/db';
 
 const ROOT = join(__dirname, '..', '..');
 
-/** Control DB migrated + seeded (plans, platform admin); leftovers of previous runs removed. */
+/**
+ * Brand-new platform: fresh control DB, migrated, then seeded exactly like a first deployment
+ * (plans, default Super Admin, default tenant "dfm" with its default accounts).
+ */
 export default async function globalSetup() {
+  await dropE2eDatabases();
+  await withAdmin((c) => c.query('CREATE DATABASE compte_control_e2e'));
   const prisma = require.resolve('prisma/build/index.js');
-  execFileSync(process.execPath, [prisma, 'migrate', 'deploy', '--config', 'prisma.control.config.ts'], { cwd: ROOT, stdio: 'pipe' });
-  execFileSync(process.execPath, [require.resolve('tsx/cli'), 'scripts/seed-control.ts'], { cwd: ROOT, stdio: 'pipe', env: process.env });
-  await purgeE2eTenants();
+  execFileSync(process.execPath, [prisma, 'migrate', 'deploy', '--config', 'prisma.control.config.ts'], {
+    cwd: ROOT,
+    stdio: 'pipe',
+    env: process.env,
+  });
+  await seedControl();
 }

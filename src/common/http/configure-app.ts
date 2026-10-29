@@ -1,11 +1,13 @@
 import { INestApplication, RequestMethod } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { DocumentBuilder, OpenAPIObject, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
 import type { EnvironmentVariables } from '../../config/env.validation';
 import { createValidationPipe } from '../validation/validation-pipe.factory';
+import { toSnake } from './case-conversion';
+import { SnakeCaseRequestPipe } from './snake-case.pipe';
 
 export const API_PREFIX = 'api/v1';
 
@@ -47,7 +49,8 @@ export function configureApp(app: NestExpressApplication) {
       { path: 'platform/{*splat}', method: RequestMethod.ALL },
     ],
   });
-  app.useGlobalPipes(createValidationPipe());
+  // Order matters: snake_case -> camelCase first, then DTO validation
+  app.useGlobalPipes(new SnakeCaseRequestPipe(), createValidationPipe());
   app.enableShutdownHooks();
 
   if (config.get('NODE_ENV', { infer: true }) !== 'production') setupSwagger(app);
@@ -67,5 +70,23 @@ function setupSwagger(app: INestApplication) {
       schema: { type: 'string', format: 'uuid' },
     })
     .build();
-  SwaggerModule.setup('docs', app, () => SwaggerModule.createDocument(app, document));
+  SwaggerModule.setup('docs', app, () => snakeCaseDocument(SwaggerModule.createDocument(app, document)));
+}
+
+/** The plugin documents DTOs with their TypeScript (camelCase) names; the wire format is snake_case. */
+function snakeCaseDocument(doc: OpenAPIObject): OpenAPIObject {
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (!node || typeof node !== 'object') return;
+    const obj = node as Record<string, unknown>;
+    if (obj.properties && typeof obj.properties === 'object') {
+      obj.properties = Object.fromEntries(Object.entries(obj.properties).map(([k, v]) => [toSnake(k), v]));
+      if (Array.isArray(obj.required)) obj.required = obj.required.map((r: string) => toSnake(r));
+    }
+    if (obj.in === 'query' && typeof obj.name === 'string') obj.name = toSnake(obj.name);
+    Object.values(obj).forEach(walk);
+  };
+  walk(doc.components);
+  walk(doc.paths);
+  return doc;
 }

@@ -2,7 +2,8 @@ import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logge
 import type { Request, Response } from 'express';
 import { Prisma } from '../../generated/tenant/client';
 import { AppException } from '../errors/app.exception';
-import { ErrorCode, ErrorResponseBody } from '../errors/error-codes';
+import { ErrorCode, ErrorResponseBody, FieldError } from '../errors/error-codes';
+import { toSnake, toSnakePath } from '../http/case-conversion';
 
 const CODE_BY_STATUS: Partial<Record<number, ErrorCode>> = {
   400: ErrorCode.BAD_REQUEST,
@@ -26,7 +27,8 @@ const PRISMA_ERRORS: Record<string, { status: HttpStatus; code: ErrorCode; messa
 };
 
 /**
- * Single error format for the whole API: { statusCode, code, message, fields?, requestId }.
+ * Single error format for the whole API, snake_case like every response:
+ * { status_code, code, message, fields?: [{ field, code, message }], request_id }.
  * Never leaks stack traces, SQL or Prisma internals; 5xx are logged with the request id.
  */
 @Catch()
@@ -46,7 +48,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
       this.logger.error({ err: exception, requestId: req.id }, 'Unhandled error');
     }
     if (res.headersSent) return;
-    res.status(body.statusCode).json(body);
+    res.status(body.statusCode).json({
+      status_code: body.statusCode,
+      code: body.code,
+      message: body.message,
+      ...(body.fields && { fields: body.fields.map(snakeField) }),
+      request_id: body.requestId,
+    });
   }
 
   private toBody(exception: unknown): ErrorResponseBody {
@@ -75,4 +83,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
     return { statusCode: HttpStatus.INTERNAL_SERVER_ERROR, code: ErrorCode.INTERNAL_ERROR, message: 'Internal server error' };
   }
+}
+
+/** DTO property names are camelCase; the client only knows their snake_case form. */
+function snakeField(error: FieldError): FieldError {
+  // Rejected camelCase keys are reported exactly as the client sent them
+  if (error.code === 'snakeCase') return error;
+  const property = error.field.split('.').pop() ?? '';
+  const message = property ? error.message.replace(new RegExp(`\\b${property}\\b`, 'g'), toSnake(property)) : error.message;
+  return { ...error, field: toSnakePath(error.field), message };
 }

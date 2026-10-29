@@ -50,7 +50,8 @@ describe('Tenant isolation', () => {
   it("tenant A's database role cannot connect to tenant B's database nor to the control plane", async () => {
     const credsA = await tenantCredentials(a);
     const credsB = await tenantCredentials(b);
-    for (const target of [credsB.dbName, 'compte_control']) {
+    const controlDb = new URL(process.env.CONTROL_DATABASE_URL!).pathname.slice(1);
+    for (const target of [credsB.dbName, controlDb]) {
       const client = new Client({ connectionString: tenantUrl(credsA, target) });
       await expect(client.connect()).rejects.toThrow(/permission denied/i);
       await client.end().catch(() => undefined);

@@ -1,5 +1,5 @@
 import { plainToInstance, Transform } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Min, MinLength, validateSync } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Matches, Min, MinLength, validateSync } from 'class-validator';
 
 // Reads the raw value: implicit conversion would turn the string "false" into true.
 const toBool = ({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
@@ -51,6 +51,10 @@ export class EnvironmentVariables {
   @IsInt()
   TENANT_DB_PORT: number = 5432;
 
+  /** Database and role name prefix of tenant databases: <prefix><subdomain>. Lets several environments share a cluster. */
+  @Matches(/^[a-z][a-z0-9_]{0,20}$/)
+  TENANT_DB_NAME_PREFIX: string = 'tenant_';
+
   @IsString()
   @MinLength(40)
   DB_CREDENTIALS_KEY: string;
@@ -79,14 +83,6 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(1)
   THROTTLE_LOGIN_LIMIT: number = 10;
-
-  @IsOptional()
-  @IsString()
-  PLATFORM_ADMIN_EMAIL?: string;
-
-  @IsOptional()
-  @IsString()
-  PLATFORM_ADMIN_PASSWORD?: string;
 }
 
 // Values shipped in .env.example; production must never start with them.
@@ -99,7 +95,6 @@ function productionErrors(env: EnvironmentVariables): string[] {
     if (PLACEHOLDER_MARKERS.some((m) => env[key].toLowerCase().includes(m))) errors.push(`${key} still has its placeholder value`);
   }
   if (env.LOG_PRETTY) errors.push('LOG_PRETTY must be false in production');
-  if (env.PLATFORM_ADMIN_PASSWORD) errors.push('PLATFORM_ADMIN_PASSWORD must not be set in production (seed it once, then remove it)');
   return errors;
 }
 

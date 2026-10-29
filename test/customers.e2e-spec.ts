@@ -41,28 +41,28 @@ describe('Companies & customers (F03, F06)', () => {
     });
 
     it('requires the legal data of a French company (AC-01)', async () => {
-      const res = await call('post', '/api/v1/companies', { legalName: 'DFM ROMANIA FR', countryCode: 'FR' }, { company: null });
+      const res = await call('post', '/api/v1/companies', { legal_name: 'DFM ROMANIA FR', country_code: 'FR' }, { company: null });
       expect(res.status).toBe(422);
       expect(res.body.fields.map((f: { field: string }) => f.field).sort()).toEqual([
-        'addressLine1',
+        'address_line1',
         'city',
         'iban',
-        'postalCode',
+        'postal_code',
         'siret',
-        'vatNumber',
+        'vat_number',
       ]);
 
       const ok = await call(
         'post',
         '/api/v1/companies',
         {
-          legalName: 'DFM PARIS',
-          countryCode: 'FR',
+          legal_name: 'DFM PARIS',
+          country_code: 'FR',
           siret: '732 829 320 00074',
-          vatNumber: 'FR44732829320',
+          vat_number: 'FR44732829320',
           iban: 'fr76 3000 6000 0112 3456 7890 189',
-          addressLine1: '1 rue X',
-          postalCode: '75001',
+          address_line1: '1 rue X',
+          postal_code: '75001',
           city: 'Paris',
         },
         { company: null },
@@ -77,12 +77,12 @@ describe('Companies & customers (F03, F06)', () => {
 
       const bad = await call('post', `/api/v1/companies/${company}/tax-rates`, { rate: '0', label: 'Exonéré' });
       expect(bad.status).toBe(422);
-      expect(bad.body.fields[0].field).toBe('legalMention');
+      expect(bad.body.fields[0].field).toBe('legal_mention');
 
       const ok = await call('post', `/api/v1/companies/${company}/tax-rates`, {
         rate: '0',
         label: 'Exonéré',
-        legalMention: 'TVA non applicable, art. 293 B du CGI',
+        legal_mention: 'TVA non applicable, art. 293 B du CGI',
       });
       expect(ok.status).toBe(201);
     });
@@ -108,8 +108,8 @@ describe('Companies & customers (F03, F06)', () => {
       });
       const second = await call('post', '/api/v1/customers', {
         type: 'INDIVIDUAL',
-        firstName: 'Jean',
-        lastName: 'Dupont',
+        first_name: 'Jean',
+        last_name: 'Dupont',
         addresses: [billingAddress],
       });
       expect(first.status).toBe(201);
@@ -148,13 +148,13 @@ describe('Companies & customers (F03, F06)', () => {
     it('drops SIRET/TVA for an individual (AC-02)', async () => {
       const res = await call('post', '/api/v1/customers', {
         type: 'INDIVIDUAL',
-        lastName: 'Martin',
+        last_name: 'Martin',
         siret: VALID_SIRET,
-        vatNumber: 'FR00',
+        vat_number: 'FR00',
         addresses: [billingAddress],
       });
       expect(res.status).toBe(201);
-      expect(res.body).toMatchObject({ name: 'Martin', siret: null, vatNumber: null });
+      expect(res.body).toMatchObject({ name: 'Martin', siret: null, vat_number: null });
     });
 
     it('manages contacts and addresses, keeping at least one billing address', async () => {
@@ -162,14 +162,14 @@ describe('Companies & customers (F03, F06)', () => {
       const billingId = customer.addresses[0].id;
 
       const contact = await call('post', `/api/v1/customers/${customer.id}/contacts`, {
-        lastName: 'Durand',
+        last_name: 'Durand',
         email: 'd@x.test',
-        isPrimary: true,
+        is_primary: true,
       });
       expect(contact.status).toBe(201);
-      expect((await call('patch', `/api/v1/customers/${customer.id}/contacts/${contact.body.id}`, { jobTitle: 'CFO' })).body.jobTitle).toBe(
-        'CFO',
-      );
+      expect(
+        (await call('patch', `/api/v1/customers/${customer.id}/contacts/${contact.body.id}`, { job_title: 'CFO' })).body.job_title,
+      ).toBe('CFO');
       expect((await call('delete', `/api/v1/customers/${customer.id}/contacts/${contact.body.id}`)).status).toBe(204);
 
       const lastBilling = await call('delete', `/api/v1/customers/${customer.id}/addresses/${billingId}`);
@@ -188,7 +188,7 @@ describe('Companies & customers (F03, F06)', () => {
         db.query(
           `INSERT INTO quotes (id, company_id, number, issue_date, valid_until, customer_id, owner_id, currency, updated_at)
            VALUES (gen_random_uuid(), $1, 'DEV20260001', now(), now(), $2, $3, 'EUR', now())`,
-          [company, customer.id, customer.ownerId],
+          [company, customer.id, customer.owner_id],
         ),
       );
       const del = await call('delete', `/api/v1/customers/${customer.id}`);
@@ -200,6 +200,29 @@ describe('Companies & customers (F03, F06)', () => {
       expect(active.body.items.map((c: { id: string }) => c.id)).not.toContain(customer.id);
       const archived = await api.call('get', '/api/v1/customers?status=ARCHIVED', { host, token: admin, company });
       expect(archived.body.items.map((c: { id: string }) => c.id)).toContain(customer.id);
+    });
+
+    it('speaks snake_case: rejects camelCase keys, answers snake_case keys and query params', async () => {
+      const camel = await call('post', '/api/v1/customers', { type: 'INDIVIDUAL', lastName: 'Camel', addresses: [billingAddress] });
+      expect(camel.status).toBe(422);
+      expect(camel.body.fields).toEqual([expect.objectContaining({ field: 'lastName', code: 'snakeCase' })]);
+
+      const created = await call('post', '/api/v1/customers', {
+        type: 'INDIVIDUAL',
+        first_name: 'Snake',
+        last_name: 'Case',
+        payment_terms_days: 45,
+        addresses: [billingAddress],
+      });
+      expect(created.status).toBe(201);
+      expect(created.body).toMatchObject({ first_name: 'Snake', last_name: 'Case', payment_terms_days: 45, company_id: company });
+      expect(created.body.addresses[0]).toMatchObject({ postal_code: '75002', is_default: false });
+      expect(Object.keys(created.body).filter((k) => /[A-Z]/.test(k))).toEqual([]);
+
+      const page = await api.call('get', '/api/v1/customers?page_size=1&page=2', { host, token: admin, company });
+      expect(page.status).toBe(200);
+      expect(page.body).toMatchObject({ page: 2, page_size: 1 });
+      expect(page.body.items).toHaveLength(1);
     });
 
     it('moves a customer without documents to the trash', async () => {

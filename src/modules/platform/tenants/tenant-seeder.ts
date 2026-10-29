@@ -3,13 +3,15 @@ import { UserStatus } from '../../../generated/tenant/enums';
 import { seedDefaultTaxRates } from '../../companies/default-tax-rates';
 import { TENANT_ADMIN_ROLE_KEY } from '../../rbac/permission-catalog';
 import { syncRbacCatalog } from '../../rbac/role-grants';
+import { ensureDefaultTenantAccounts } from './default-accounts';
 
 export interface TenantSeedInput {
+  subdomain: string;
   company: { legalName: string; countryCode?: string; currency?: string };
   admin: { email: string; fullName: string; passwordHash: string };
 }
 
-/** Default data for a freshly migrated tenant DB. Safe to re-run. */
+/** Default data for a freshly migrated tenant DB (roles, first company, admins, default accounts). Safe to re-run. */
 export async function seedTenant(db: TenantPrismaClient, input: TenantSeedInput) {
   await db.$transaction(async (tx) => {
     await syncRbacCatalog(tx);
@@ -36,4 +38,5 @@ export async function seedTenant(db: TenantPrismaClient, input: TenantSeedInput)
     const tenantWide = await tx.membership.findFirst({ where: { userId: admin.id, companyId: null } });
     if (!tenantWide) await tx.membership.create({ data: { userId: admin.id, companyId: null, roleId: adminRole.id } });
   });
+  await ensureDefaultTenantAccounts(db, input.subdomain);
 }

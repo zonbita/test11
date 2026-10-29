@@ -148,6 +148,7 @@ export class TenantsService {
       const schemaVersion = await migrateTenantDatabase(this.registry.connectionString(tenant));
       step = 'seed';
       await seedTenant(this.registry.clientFor(tenant), {
+        subdomain: tenant.subdomain,
         company: { legalName: input.companyLegalName, countryCode: input.companyCountryCode, currency: input.companyCurrency },
         admin: { email: input.adminEmail, fullName: input.adminFullName, passwordHash: await hashPassword(adminPassword) },
       });

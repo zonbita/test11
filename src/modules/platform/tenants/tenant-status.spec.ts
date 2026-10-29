@@ -9,13 +9,13 @@ describe('tenant lifecycle (F01 BR-03)', () => {
     [PROVISIONING, FAILED],
     [ACTIVE, SUSPENDED],
     [SUSPENDED, ACTIVE],
-    [ACTIVE, DELETED],
     [SUSPENDED, DELETED],
     [FAILED, PROVISIONING],
   ])('allows %s -> %s', (from, to) => expect(canTransition(from, to)).toBe(true));
 
   it.each([
     [DELETED, ACTIVE],
+    [ACTIVE, DELETED],
     [FAILED, ACTIVE],
     [ACTIVE, PROVISIONING],
     [PROVISIONING, SUSPENDED],

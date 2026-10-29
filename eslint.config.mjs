@@ -25,8 +25,15 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**/*.ts'],
+    files: ['src/cli/**/*.ts'],
     rules: { 'no-console': 'off' },
+  },
+  {
+    // Plain CommonJS helpers (jest transformer): no type information
+    files: ['**/*.js'],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: { sourceType: 'commonjs' },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
   prettier,
 );

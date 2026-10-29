@@ -15,13 +15,13 @@ describe('HTTP foundation', () => {
     expect((await api.call('get', '/health/live')).body.status).toBe('ok');
     const ready = await api.call('get', '/health/ready');
     expect(ready.status).toBe(200);
-    expect(ready.body.details.controlDb.status).toBe('up');
+    expect(ready.body.details.control_db.status).toBe('up');
   });
 
   it('echoes a valid X-Request-Id, generates one otherwise, and puts it in error bodies', async () => {
     const given = await api.call('get', '/api/v1/nope', { headers: { 'X-Request-Id': 'abc-123' } });
     expect(given.headers['x-request-id']).toBe('abc-123');
-    expect(given.body).toEqual({ statusCode: 404, code: 'NOT_FOUND', message: expect.any(String), requestId: 'abc-123' });
+    expect(given.body).toEqual({ status_code: 404, code: 'NOT_FOUND', message: expect.any(String), request_id: 'abc-123' });
 
     const unsafe = await api.call('get', '/api/v1/nope', { headers: { 'X-Request-Id': 'bad id<script>' } });
     expect(unsafe.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
@@ -30,7 +30,7 @@ describe('HTTP foundation', () => {
   it('answers 401 with the unified error format on protected tenant routes', async () => {
     const res = await api.call('get', '/api/v1/auth/me');
     expect(res.status).toBe(401);
-    expect(res.body).toMatchObject({ statusCode: 401, code: 'UNAUTHORIZED', requestId: expect.any(String) });
+    expect(res.body).toMatchObject({ status_code: 401, code: 'UNAUTHORIZED', request_id: expect.any(String) });
     expect(res.body).not.toHaveProperty('stack');
   });
 
@@ -60,5 +60,12 @@ describe('HTTP foundation', () => {
     const res = await api.call('get', '/docs-json');
     expect(res.status).toBe(200);
     expect(Object.keys(res.body.paths)).toEqual(expect.arrayContaining(['/api/v1/customers', '/platform/api/v1/tenants']));
+    // DTO schemas and query parameters are documented in snake_case, like the wire format
+    const tenantSchema = res.body.components.schemas.CreateTenantDto;
+    expect(Object.keys(tenantSchema.properties)).toEqual(expect.arrayContaining(['company_legal_name', 'admin_password']));
+    expect(tenantSchema.required).toContain('admin_email');
+    const listParams = res.body.paths['/api/v1/customers'].get.parameters.map((p: { name: string }) => p.name);
+    expect(listParams).toContain('page_size');
+    expect(listParams.filter((n: string) => n !== 'X-Company-Id' && /[A-Z]/.test(n))).toEqual([]);
   });
 });

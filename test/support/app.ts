@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/common/http/configure-app';
+import { DEFAULT_PASSWORD, SUPER_ADMIN_EMAIL } from '../../src/modules/platform/tenants/default-accounts';
 import { E2E_PREFIX } from './db';
 
 // Environment is read once, when AppModule is imported (see setup/env.ts).
@@ -27,6 +28,7 @@ export interface CallOptions {
   host?: string;
   token?: string;
   company?: string;
+  /** Sent as is: JSON keys must be snake_case (PRD ch.4) */
   body?: object;
   headers?: Record<string, string>;
 }
@@ -45,12 +47,10 @@ export class Api {
     return opts.body ? req.send(opts.body) : req;
   }
 
-  async platformToken(): Promise<string> {
-    const res = await this.call('post', '/platform/api/v1/auth/login', {
-      body: { email: process.env.PLATFORM_ADMIN_EMAIL, password: process.env.PLATFORM_ADMIN_PASSWORD },
-    });
+  async platformToken(email = SUPER_ADMIN_EMAIL, password = DEFAULT_PASSWORD): Promise<string> {
+    const res = await this.call('post', '/platform/api/v1/auth/login', { body: { email, password } });
     if (res.status !== 200) throw new Error(`platform login failed: ${res.status} ${JSON.stringify(res.body)}`);
-    return res.body.accessToken;
+    return res.body.access_token;
   }
 
   async createTenant(platformToken: string, subdomain: string, opts: { plan?: string; adminPassword?: string } = {}) {
@@ -59,21 +59,21 @@ export class Api {
       body: {
         name: `Tenant ${subdomain}`,
         subdomain,
-        planCode: opts.plan ?? 'business',
-        companyLegalName: `${subdomain.toUpperCase()} SAS`,
-        adminEmail: `admin@${subdomain}.test`,
-        adminFullName: 'Tenant Admin',
-        adminPassword: opts.adminPassword ?? ADMIN_PASSWORD,
+        plan_code: opts.plan ?? 'business',
+        company_legal_name: `${subdomain.toUpperCase()} SAS`,
+        admin_email: `admin@${subdomain}.test`,
+        admin_full_name: 'Tenant Admin',
+        admin_password: opts.adminPassword ?? ADMIN_PASSWORD,
       },
     });
     if (res.status !== 201) throw new Error(`createTenant failed: ${res.status} ${JSON.stringify(res.body)}`);
-    return res.body as { id: string; subdomain: string; status: string; schemaVersion: string };
+    return res.body as { id: string; subdomain: string; status: string; schema_version: string };
   }
 
   async login(subdomain: string, email: string, password: string): Promise<string> {
     const res = await this.call('post', '/api/v1/auth/login', { host: hostOf(subdomain), body: { email, password } });
     if (res.status !== 200) throw new Error(`login ${email} failed: ${res.status} ${JSON.stringify(res.body)}`);
-    return res.body.accessToken;
+    return res.body.access_token;
   }
 
   adminLogin(subdomain: string) {
@@ -84,4 +84,4 @@ export class Api {
 export const ADMIN_PASSWORD = 'Admin-Password-2026';
 export const USER_PASSWORD = 'User-Password-2026';
 
-export const billingAddress = { type: 'BILLING', line1: '1 rue de la Paix', postalCode: '75002', city: 'Paris' };
+export const billingAddress = { type: 'BILLING', line1: '1 rue de la Paix', postal_code: '75002', city: 'Paris' };

@@ -16,7 +16,7 @@ describe('Platform: tenants & Super Admin (F01)', () => {
   afterAll(() => app.close());
 
   describe('provisioning', () => {
-    let tenant: { id: string; subdomain: string; status: string; schemaVersion: string };
+    let tenant: { id: string; subdomain: string; status: string; schema_version: string };
 
     beforeAll(async () => {
       tenant = await api.createTenant(token, uniqueSubdomain('prov'));
@@ -24,14 +24,14 @@ describe('Platform: tenants & Super Admin (F01)', () => {
 
     it('creates an ACTIVE tenant with its own database, records the schema version, never returns DB credentials', async () => {
       expect(tenant.status).toBe('ACTIVE');
-      expect(tenant.schemaVersion).toMatch(/^\d{14}_/);
+      expect(tenant.schema_version).toMatch(/^\d{14}_/);
       const res = await api.call('get', `/platform/api/v1/tenants/${tenant.id}`, { token });
       expect(res.status).toBe(200);
-      expect(Object.keys(res.body)).not.toEqual(expect.arrayContaining(['dbPasswordEnc']));
-      expect(JSON.stringify(res.body)).not.toMatch(/db_?Password|dbUser|dbHost/i);
+      expect(Object.keys(res.body)).not.toEqual(expect.arrayContaining(['db_password_enc']));
+      expect(JSON.stringify(res.body)).not.toMatch(/db_?password|db_?user|db_?host/i);
 
       const { rows } = await withAdmin((c) =>
-        c.query('SELECT 1 FROM pg_database WHERE datname = $1', [`tenant_${tenant.subdomain.replace(/-/g, '_')}`]),
+        c.query('SELECT 1 FROM pg_database WHERE datname = $1', [`tenant_e2e_${tenant.subdomain.replace(/-/g, '_')}`]),
       );
       expect(rows).toHaveLength(1);
     });
@@ -46,10 +46,10 @@ describe('Platform: tenants & Super Admin (F01)', () => {
         body: {
           name: 'dup',
           subdomain: tenant.subdomain,
-          companyLegalName: 'X',
-          adminEmail: 'a@b.test',
-          adminFullName: 'A',
-          adminPassword: ADMIN_PASSWORD,
+          company_legal_name: 'X',
+          admin_email: 'a@b.test',
+          admin_full_name: 'A',
+          admin_password: ADMIN_PASSWORD,
         },
       });
       expect(res.status).toBe(422);
@@ -64,27 +64,34 @@ describe('Platform: tenants & Super Admin (F01)', () => {
     ])('rejects a %s subdomain with 422', async (_label, subdomain, code) => {
       const res = await api.call('post', '/platform/api/v1/tenants', {
         token,
-        body: { name: 'x', subdomain, companyLegalName: 'X', adminEmail: 'a@b.test', adminFullName: 'A', adminPassword: ADMIN_PASSWORD },
+        body: {
+          name: 'x',
+          subdomain,
+          company_legal_name: 'X',
+          admin_email: 'a@b.test',
+          admin_full_name: 'A',
+          admin_password: ADMIN_PASSWORD,
+        },
       });
       expect(res.status).toBe(422);
       expect(res.body.code).toBe(code);
     });
 
     it('rejects a weak admin password (F02 BR-01: >= 12 chars, not common)', async () => {
-      for (const adminPassword of ['Short-123', 'password1234']) {
+      for (const admin_password of ['Short-123', 'password1234']) {
         const res = await api.call('post', '/platform/api/v1/tenants', {
           token,
           body: {
             name: 'x',
             subdomain: uniqueSubdomain('weak'),
-            companyLegalName: 'X',
-            adminEmail: 'a@b.test',
-            adminFullName: 'A',
-            adminPassword,
+            company_legal_name: 'X',
+            admin_email: 'a@b.test',
+            admin_full_name: 'A',
+            admin_password,
           },
         });
         expect(res.status).toBe(422);
-        expect(res.body.fields).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'adminPassword' })]));
+        expect(res.body.fields).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'admin_password' })]));
       }
     });
   });
@@ -109,7 +116,14 @@ describe('Platform: tenants & Super Admin (F01)', () => {
       expect((await api.call('get', '/api/v1/auth/me', { host: hostOf(tenant.subdomain), token: tenantToken })).status).toBe(200);
     });
 
-    it('DELETED blocks access immediately and is final (409 on any further transition)', async () => {
+    it('ACTIVE cannot go straight to DELETED: suspend first (409 INVALID_STATUS_TRANSITION)', async () => {
+      const res = await setStatus('DELETED');
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('INVALID_STATUS_TRANSITION');
+    });
+
+    it('SUSPENDED -> DELETED blocks access immediately and is final (409 on any further transition)', async () => {
+      expect((await setStatus('SUSPENDED')).status).toBe(200);
       expect((await setStatus('DELETED')).status).toBe(200);
       const me = await api.call('get', '/api/v1/auth/me', { host: hostOf(tenant.subdomain), token: tenantToken });
       expect(me.status).toBe(404);
@@ -125,7 +139,7 @@ describe('Platform: tenants & Super Admin (F01)', () => {
 
   describe('failed provisioning (AC-03)', () => {
     const subdomain = uniqueSubdomain('fail');
-    const role = `tenant_${subdomain.replace(/-/g, '_')}`;
+    const role = `tenant_e2e_${subdomain.replace(/-/g, '_')}`;
 
     it('cleans up, marks the tenant FAILED, and succeeds on retry', async () => {
       // Make step "create database" fail: the tenant role already exists
@@ -136,15 +150,15 @@ describe('Platform: tenants & Super Admin (F01)', () => {
         body: {
           name: 'fail',
           subdomain,
-          planCode: 'business',
-          companyLegalName: 'F SAS',
-          adminEmail: `admin@${subdomain}.test`,
-          adminFullName: 'A',
-          adminPassword: ADMIN_PASSWORD,
+          plan_code: 'business',
+          company_legal_name: 'F SAS',
+          admin_email: `admin@${subdomain}.test`,
+          admin_full_name: 'A',
+          admin_password: ADMIN_PASSWORD,
         },
       });
       expect(failed.status).toBe(500);
-      expect(failed.body).toMatchObject({ code: 'PROVISIONING_FAILED', requestId: expect.any(String) });
+      expect(failed.body).toMatchObject({ code: 'PROVISIONING_FAILED', request_id: expect.any(String) });
 
       const { rows } = await withControl((c) =>
         c.query('SELECT id, status, failure_reason FROM tenants WHERE subdomain = $1', [subdomain]),
@@ -155,7 +169,7 @@ describe('Platform: tenants & Super Admin (F01)', () => {
 
       const retry = await api.call('post', `/platform/api/v1/tenants/${rows[0].id}/retry`, {
         token,
-        body: { adminPassword: ADMIN_PASSWORD },
+        body: { admin_password: ADMIN_PASSWORD },
       });
       expect(retry.status).toBe(201);
       expect(retry.body.status).toBe('ACTIVE');
@@ -164,7 +178,7 @@ describe('Platform: tenants & Super Admin (F01)', () => {
       // Only FAILED tenants can be retried
       const again = await api.call('post', `/platform/api/v1/tenants/${rows[0].id}/retry`, {
         token,
-        body: { adminPassword: ADMIN_PASSWORD },
+        body: { admin_password: ADMIN_PASSWORD },
       });
       expect(again.status).toBe(409);
     });

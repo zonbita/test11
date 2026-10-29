@@ -18,7 +18,8 @@ services:
       timeout: 3s
       retries: 10
 
-  # One-off job: control-plane migrations, then the API starts
+  # One-off job, idempotent: control migrations -> seed (plans, default Super Admin, default tenant "dfm"
+  # on a brand-new platform) -> tenant migrations + missing default accounts. Then the API starts.
   migrate:
     profiles: [app]
     build: .
@@ -26,11 +27,13 @@ services:
     environment: &container-env
       NODE_ENV: production
       LOG_PRETTY: 'false'
-      PLATFORM_ADMIN_PASSWORD: ''
       CONTROL_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/compte_control
       TENANT_DB_ADMIN_URL: postgresql://postgres:postgres@postgres:5432/postgres
       TENANT_DB_HOST: postgres
-    command: ['npx', 'prisma', 'migrate', 'deploy', '--config', 'prisma.control.config.ts']
+    command:
+      - sh
+      - -c
+      - npx prisma migrate deploy --config prisma.control.config.ts && node dist/cli/seed-control.js && node dist/cli/migrate-tenants.js
     depends_on:
       postgres:
         condition: service_healthy

@@ -29,10 +29,12 @@ describe('validateEnv', () => {
     );
   });
 
-  it('refuses pretty logs and a bootstrap admin password in production', () => {
-    expect(() => validateEnv({ ...base, NODE_ENV: 'production', LOG_PRETTY: 'true', PLATFORM_ADMIN_PASSWORD: 'x' })).toThrow(
-      /LOG_PRETTY[\s\S]*PLATFORM_ADMIN_PASSWORD/,
-    );
+  it('refuses pretty logs in production', () => {
+    expect(() => validateEnv({ ...base, NODE_ENV: 'production', LOG_PRETTY: 'true' })).toThrow(/LOG_PRETTY/);
+  });
+
+  it('rejects an unsafe tenant database name prefix', () => {
+    expect(() => validateEnv({ ...base, TENANT_DB_NAME_PREFIX: 'x; drop' })).toThrow(/TENANT_DB_NAME_PREFIX/);
   });
 
   it('accepts real secrets in production', () => {

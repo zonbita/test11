@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { SnakeCaseResponseInterceptor } from './common/http/snake-case.interceptor';
 import { buildThrottlerOptions } from './common/http/throttle';
 import { buildLoggerOptions } from './common/logging/logger.options';
 import { EnvironmentVariables, validateEnv } from './config/env.validation';
@@ -56,6 +57,7 @@ type AppConfig = ConfigService<EnvironmentVariables, true>;
     { provide: APP_GUARD, useExisting: JwtAuthGuard },
     { provide: APP_GUARD, useExisting: PermissionGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
+    { provide: APP_INTERCEPTOR, useClass: SnakeCaseResponseInterceptor },
   ],
 })
 export class AppModule {}
