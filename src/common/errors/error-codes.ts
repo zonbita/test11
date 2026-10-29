@@ -1,0 +1,65 @@
+/** Stable, machine-readable error codes returned in the `code` field of every error response. */
+export const ErrorCode = {
+  // Generic (derived from HTTP status)
+  BAD_REQUEST: 'BAD_REQUEST',
+  UNAUTHORIZED: 'UNAUTHORIZED',
+  FORBIDDEN: 'FORBIDDEN',
+  NOT_FOUND: 'NOT_FOUND',
+  CONFLICT: 'CONFLICT',
+  VALIDATION_FAILED: 'VALIDATION_FAILED',
+  RATE_LIMITED: 'RATE_LIMITED',
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+
+  // Database constraint violations
+  UNIQUE_VIOLATION: 'UNIQUE_VIOLATION',
+  FOREIGN_KEY_VIOLATION: 'FOREIGN_KEY_VIOLATION',
+
+  // Auth (F02)
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
+  TOKEN_REVOKED: 'TOKEN_REVOKED',
+  WRONG_TENANT: 'WRONG_TENANT',
+
+  // Tenancy & plans (F01)
+  TENANT_NOT_FOUND: 'TENANT_NOT_FOUND',
+  TENANT_SUSPENDED: 'TENANT_SUSPENDED',
+  TENANT_CONTEXT_REQUIRED: 'TENANT_CONTEXT_REQUIRED',
+  SUBDOMAIN_TAKEN: 'SUBDOMAIN_TAKEN',
+  SUBDOMAIN_RESERVED: 'SUBDOMAIN_RESERVED',
+  INVALID_STATUS_TRANSITION: 'INVALID_STATUS_TRANSITION',
+  PROVISIONING_FAILED: 'PROVISIONING_FAILED',
+  PLAN_LIMIT_REACHED: 'PLAN_LIMIT_REACHED',
+
+  // RBAC & users (F04)
+  PERMISSION_DENIED: 'PERMISSION_DENIED',
+  OUT_OF_SCOPE: 'OUT_OF_SCOPE',
+  TENANT_SCOPE_REQUIRED: 'TENANT_SCOPE_REQUIRED',
+  COMPANY_REQUIRED: 'COMPANY_REQUIRED',
+  COMPANY_NOT_FOUND: 'COMPANY_NOT_FOUND',
+  COMPANY_INACTIVE: 'COMPANY_INACTIVE',
+  LAST_ADMIN: 'LAST_ADMIN',
+  SYSTEM_ROLE_LOCKED: 'SYSTEM_ROLE_LOCKED',
+  ROLE_IN_USE: 'ROLE_IN_USE',
+
+  // Customers (F06)
+  CUSTOMER_HAS_DOCUMENTS: 'CUSTOMER_HAS_DOCUMENTS',
+  LAST_BILLING_ADDRESS: 'LAST_BILLING_ADDRESS',
+  INVALID_ASSIGNEE: 'INVALID_ASSIGNEE',
+} as const;
+
+export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
+
+export interface FieldError {
+  field: string;
+  code: string;
+  message: string;
+}
+
+/** Body of every error response (PRD ch.4: {code, message, fields[]}) */
+export interface ErrorResponseBody {
+  statusCode: number;
+  code: string;
+  message: string;
+  fields?: FieldError[];
+  requestId?: string;
+}

@@ -1,0 +1,51 @@
+# Local development: `docker compose up -d` starts PostgreSQL only (run the API with `npm run start:dev`).
+# Full stack in containers: `docker compose --profile app up -d --build`.
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: compte_control
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-off job: control-plane migrations, then the API starts
+  migrate:
+    profiles: [app]
+    build: .
+    env_file: .env
+    environment: &container-env
+      NODE_ENV: production
+      LOG_PRETTY: 'false'
+      PLATFORM_ADMIN_PASSWORD: ''
+      CONTROL_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/compte_control
+      TENANT_DB_ADMIN_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      TENANT_DB_HOST: postgres
+    command: ['npx', 'prisma', 'migrate', 'deploy', '--config', 'prisma.control.config.ts']
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app:
+    profiles: [app]
+    build: .
+    env_file: .env
+    environment: *container-env
+    ports:
+      - '3000:3000'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    stop_grace_period: 30s
+
+volumes:
+  pgdata:

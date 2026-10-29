@@ -1,0 +1,25 @@
+model User {
+  id               String     @id @default(uuid()) @db.Uuid
+  email            String     @unique
+  passwordHash     String?    @map("password_hash")
+  fullName         String     @map("full_name")
+  locale           String     @default("fr")
+  status           UserStatus @default(ACTIVE)
+  // Bumped to revoke every token of the user at once (disable, password reset)
+  tokenVersion     Int        @default(0) @map("token_version")
+  mfaEnabled       Boolean    @default(false) @map("mfa_enabled")
+  mfaSecret        String?    @map("mfa_secret")
+  failedLoginCount Int        @default(0) @map("failed_login_count")
+  lockedUntil      DateTime?  @map("locked_until")
+  lastLoginAt      DateTime?  @map("last_login_at")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+
+  memberships    Membership[]
+  ownedCustomers Customer[]      @relation("CustomerOwner")
+  customerShares CustomerShare[]
+  ownedQuotes    Quote[]         @relation("QuoteOwner")
+  ownedInvoices  Invoice[]       @relation("InvoiceOwner")
+
+  @@map("users")
+}

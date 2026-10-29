@@ -1,0 +1,18 @@
+// Append-only. Never update or delete rows from application code.
+model AuditLog {
+  id        BigInt   @id @default(autoincrement())
+  userId    String?  @map("user_id") @db.Uuid
+  companyId String?  @map("company_id") @db.Uuid
+  entity    String
+  entityId  String?  @map("entity_id")
+  action    String
+  before    Json?
+  after     Json?
+  ip        String?
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([entity, entityId])
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}

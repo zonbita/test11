@@ -1,0 +1,27 @@
+model Tenant {
+  id                String       @id @default(uuid()) @db.Uuid
+  name              String
+  subdomain         String       @unique
+  status            TenantStatus @default(PROVISIONING)
+  planId            String       @map("plan_id") @db.Uuid
+  // Connection to the tenant's own database. Password is AES-256-GCM encrypted.
+  dbHost            String       @map("db_host")
+  dbPort            Int          @map("db_port")
+  dbName            String       @unique @map("db_name")
+  dbUser            String       @unique @map("db_user")
+  dbPasswordEnc     String       @map("db_password_enc")
+  // Latest tenant-schema migration applied to this tenant's database
+  schemaVersion     String?      @map("schema_version")
+  // Kept while PROVISIONING/FAILED so provisioning can be retried (never contains passwords)
+  provisioningInput Json?        @map("provisioning_input")
+  failureReason     String?      @map("failure_reason")
+  suspendedAt       DateTime?    @map("suspended_at")
+  deletedAt         DateTime?    @map("deleted_at")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  plan Plan @relation(fields: [planId], references: [id])
+
+  @@index([status])
+  @@map("tenants")
+}
