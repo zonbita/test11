@@ -15,6 +15,14 @@ const SCOPE_RANK: Record<DataScope, number> = {
 /** Widest first: the guard keeps the first scope the user is allowed. */
 export const SCOPES_WIDEST_FIRST: DataScope[] = [DataScope.TENANT, DataScope.COMPANY, DataScope.OWN];
 
+/**
+ * Scope a grant really gives through a membership. Mirrors the matcher in model.conf:
+ * a membership bound to one company (companyId set) never reaches TENANT.
+ */
+export function effectiveScope(granted: DataScope, companyId: string | null): DataScope {
+  return companyId && granted === DataScope.TENANT ? DataScope.COMPANY : granted;
+}
+
 /** Casbin matcher function: a policy granted at `granted` scope covers a request at `requested` scope. */
 export function scopeCovers(granted: string, requested: string): boolean {
   const g = SCOPE_RANK[granted as DataScope];

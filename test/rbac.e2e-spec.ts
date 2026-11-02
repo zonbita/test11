@@ -1,4 +1,7 @@
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { EnforcerService } from '../src/modules/rbac/enforcer.service';
+import { TenantRegistryService } from '../src/modules/tenancy/tenant-registry.service';
+import { PRD_PERMISSION_MATRIX } from './fixtures/prd-permission-matrix';
 import { Api, billingAddress, createTestApp, hostOf, uniqueSubdomain, USER_PASSWORD } from './support/app';
 import { withTenantDb } from './support/db';
 
@@ -209,6 +212,111 @@ describe('RBAC & users (F04)', () => {
       expect((await call('get', '/api/v1/customers', { token: reader.token, company: companyA })).status).toBe(200);
       expect((await call('patch', `/api/v1/roles/${role.body.id}`, { token: admin, body: { grants: [] } })).status).toBe(204);
       expect((await call('get', '/api/v1/customers', { token: reader.token, company: companyA })).status).toBe(403);
+    });
+  });
+
+  describe('GET /auth/me permissions (display only)', () => {
+    interface MeMembership {
+      company: { id: string; legal_name: string; status: string } | null;
+      role: { id: string; key: string; name: string };
+      permissions: { resource: string; action: string; scope: string }[];
+    }
+
+    const me = async (token: string) => {
+      const res = await call('get', '/api/v1/auth/me', { token });
+      expect(res.status).toBe(200);
+      return res.body as { id: string; memberships: MeMembership[] };
+    };
+    const scopes = (m: MeMembership) => Object.fromEntries(m.permissions.map((p) => [`${p.resource}.${p.action}`, p.scope]));
+
+    /** What Casbin really enforces for this user, with the real policy tables. */
+    const casbinScope = async (userId: string, companyId: string | null, resource: string, action: string) => {
+      const registry = app.get(TenantRegistryService);
+      const tenant = (await registry.findBySubdomain(sub))!;
+      const enforcers = app.get(EnforcerService);
+      return enforcers.resolveScope(await enforcers.forTenant(tenant.id, registry.clientFor(tenant)), userId, companyId, resource, action);
+    };
+
+    it('admin: tenant-wide membership (company null) with TENANT scope', async () => {
+      const { memberships } = await me(admin);
+      expect(memberships).toHaveLength(1);
+      expect(memberships[0].company).toBeNull();
+      expect(memberships[0].role).toEqual({ id: roles.tenant_admin, key: 'tenant_admin', name: expect.any(String) });
+      expect(scopes(memberships[0])).toEqual(PRD_PERMISSION_MATRIX.tenant_admin);
+    });
+
+    it('sales: company membership with OWN scope, company described', async () => {
+      const sales = await createUser(`me-sales@${sub}.test`, [{ company_id: companyA, role_id: roles.sales }]);
+      const { memberships } = await me(sales.token);
+      expect(memberships).toHaveLength(1);
+      expect(memberships[0].company).toEqual({ id: companyA, legal_name: expect.any(String), status: 'ACTIVE' });
+      expect(scopes(memberships[0])).toEqual(PRD_PERMISSION_MATRIX.sales);
+      expect(scopes(memberships[0])['customer.read']).toBe('OWN');
+    });
+
+    it('a TENANT grant is shown as COMPANY on a company membership, and as TENANT tenant-wide, matching Casbin', async () => {
+      const grants = [
+        { resource: 'user', action: 'manage', scope: 'TENANT' },
+        { resource: 'customer', action: 'read', scope: 'TENANT' },
+        { resource: 'quote', action: 'read', scope: 'OWN' },
+      ];
+      const role = (await call('post', '/api/v1/roles', { token: admin, body: { key: 'me_custom', name: 'Me custom', grants } })).body.id;
+
+      const bound = await createUser(`me-bound@${sub}.test`, [{ company_id: companyA, role_id: role }]);
+      const boundMe = (await me(bound.token)).memberships[0];
+      expect(scopes(boundMe)).toEqual({ 'user.manage': 'COMPANY', 'customer.read': 'COMPANY', 'quote.read': 'OWN' });
+
+      const wide = await createUser(`me-wide@${sub}.test`, [{ company_id: null, role_id: role }]);
+      const wideMe = (await me(wide.token)).memberships[0];
+      expect(scopes(wideMe)).toEqual({ 'user.manage': 'TENANT', 'customer.read': 'TENANT', 'quote.read': 'OWN' });
+
+      for (const { resource, action } of grants) {
+        expect(await casbinScope(bound.id, companyA, resource, action)).toBe(scopes(boundMe)[`${resource}.${action}`]);
+        expect(await casbinScope(wide.id, null, resource, action)).toBe(scopes(wideMe)[`${resource}.${action}`]);
+      }
+    });
+
+    it('a user in several companies gets one entry per company, each with its own role and permissions', async () => {
+      const multi = await createUser(`me-multi@${sub}.test`, [
+        { company_id: companyA, role_id: roles.viewer },
+        { company_id: companyB, role_id: roles.sales },
+      ]);
+      const { memberships } = await me(multi.token);
+      expect(memberships.map((m) => m.role.key).sort()).toEqual(['sales', 'viewer']);
+      const inA = memberships.find((m) => m.company?.id === companyA)!;
+      const inB = memberships.find((m) => m.company?.id === companyB)!;
+      expect(scopes(inA)).toEqual(PRD_PERMISSION_MATRIX.viewer);
+      expect(scopes(inB)).toEqual(PRD_PERMISSION_MATRIX.sales);
+      expect(await casbinScope(multi.id, companyA, 'customer', 'read')).toBe('COMPANY');
+      expect(await casbinScope(multi.id, companyB, 'customer', 'read')).toBe('OWN');
+    });
+
+    it('reflects role changes on the next call', async () => {
+      const role = await call('post', '/api/v1/roles', {
+        token: admin,
+        body: { key: 'me_changing', name: 'Changing', grants: [{ resource: 'customer', action: 'read', scope: 'COMPANY' }] },
+      });
+      const user = await createUser(`me-change@${sub}.test`, [{ company_id: companyA, role_id: role.body.id }]);
+      expect(scopes((await me(user.token)).memberships[0])).toEqual({ 'customer.read': 'COMPANY' });
+      await call('patch', `/api/v1/roles/${role.body.id}`, {
+        token: admin,
+        body: { grants: [{ resource: 'quote', action: 'read', scope: 'OWN' }] },
+      });
+      expect(scopes((await me(user.token)).memberships[0])).toEqual({ 'quote.read': 'OWN' });
+    });
+
+    it('returns only the profile and permissions of the caller, in snake_case, and needs no permission', async () => {
+      const noRole = await createUser(`me-none@${sub}.test`, []);
+      const res = await call('get', '/api/v1/auth/me', { token: noRole.token });
+      expect(res.status).toBe(200);
+      expect(Object.keys(res.body).sort()).toEqual(['email', 'full_name', 'id', 'locale', 'memberships', 'mfa_enabled', 'status']);
+      expect(res.body.id).toBe(noRole.id);
+      expect(res.body.memberships).toEqual([]);
+
+      const body = await me(admin);
+      expect(Object.keys(body.memberships[0]).sort()).toEqual(['company', 'permissions', 'role']);
+      expect(Object.keys(body.memberships[0].permissions[0]).sort()).toEqual(['action', 'resource', 'scope']);
+      expect(JSON.stringify(body)).not.toMatch(/password|mfa_secret|token_version|failed_login/);
     });
   });
 

@@ -3,6 +3,7 @@ import type { ControlEventsService } from '../../../database/control-events.serv
 import { DataScope } from '../../../generated/tenant/enums';
 import { EnforcerService } from '../enforcer.service';
 import { createEnforcer } from './create-enforcer';
+import { effectiveScope } from './subjects';
 
 const COMPANY_A = 'aaaaaaaa-0000-0000-0000-000000000000';
 const COMPANY_B = 'bbbbbbbb-0000-0000-0000-000000000000';
@@ -103,5 +104,31 @@ describe('Casbin RBAC model', () => {
 
   it('unknown users are denied', async () => {
     expect(await scope('nobody', COMPANY_A, 'customer', 'read')).toBeNull();
+  });
+});
+
+describe('effectiveScope (scope shown by GET /auth/me)', () => {
+  const service = new EnforcerService({ subscribe: () => undefined } as unknown as ControlEventsService);
+  const SCOPES = Object.values(DataScope);
+
+  it.each(SCOPES)('grant %s: gives the same scope as the Casbin matcher, company-bound and tenant-wide', async (granted) => {
+    const enforcer = await createEnforcer(
+      new InMemoryAdapter(
+        [['role:r', 'customer', 'read', granted]],
+        [
+          ['user:bound', 'role:r', `company:${COMPANY_A}`],
+          ['user:wide', 'role:r', '*'],
+        ],
+      ),
+    );
+    expect(effectiveScope(granted, COMPANY_A)).toBe(await service.resolveScope(enforcer, 'bound', COMPANY_A, 'customer', 'read'));
+    expect(effectiveScope(granted, null)).toBe(await service.resolveScope(enforcer, 'wide', COMPANY_A, 'customer', 'read'));
+    expect(effectiveScope(granted, null)).toBe(await service.resolveScope(enforcer, 'wide', null, 'customer', 'read'));
+  });
+
+  it('caps TENANT at COMPANY only on a company-bound membership', () => {
+    expect(effectiveScope(DataScope.TENANT, COMPANY_A)).toBe(DataScope.COMPANY);
+    expect(effectiveScope(DataScope.TENANT, null)).toBe(DataScope.TENANT);
+    expect(effectiveScope(DataScope.OWN, COMPANY_A)).toBe(DataScope.OWN);
   });
 });

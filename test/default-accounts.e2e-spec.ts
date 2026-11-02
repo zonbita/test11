@@ -80,6 +80,36 @@ describe('Default accounts (one per role, password 123456)', () => {
     expect(mismatches).toEqual([]);
   });
 
+  it('GET /auth/me shows, for each account, exactly what Casbin enforces and what the PRD matrix says', async () => {
+    const registry = app.get(TenantRegistryService);
+    const enforcers = app.get(EnforcerService);
+    const tenant = (await registry.findBySubdomain(DFM))!;
+    const enforcer = await enforcers.forTenant(tenant.id, registry.clientFor(tenant));
+
+    const mismatches: string[] = [];
+    for (const account of defaultTenantAccounts(DFM)) {
+      const res = await api.call('get', '/api/v1/auth/me', { host, token: tokens[account.roleKey] });
+      expect(res.status).toBe(200);
+      expect(res.body.memberships).toHaveLength(1);
+      const [membership] = res.body.memberships as {
+        company: { id: string } | null;
+        permissions: { resource: string; action: string; scope: string }[];
+      }[];
+      expect(membership.company?.id ?? null).toBe(account.tenantWide ? null : company);
+
+      const shown = new Map(membership.permissions.map((p) => [`${p.resource}.${p.action}`, p.scope]));
+      for (const { resource, action } of PERMISSIONS) {
+        const code = `${resource}.${action}`;
+        const casbin = await enforcers.resolveScope(enforcer, res.body.id, company, resource, action);
+        const inMe = shown.get(code) ?? null;
+        const inMatrix = PRD_PERMISSION_MATRIX[account.roleKey][code] ?? null;
+        if (inMe !== casbin || inMe !== inMatrix)
+          mismatches.push(`${account.email} ${code}: me=${inMe} casbin=${casbin} matrix=${inMatrix}`);
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
+
   it('HTTP spot checks per role', async () => {
     const as = (role: string, method: Parameters<Api['call']>[0], path: string, body?: object) =>
       api.call(method, path, { host, token: tokens[role], company, body }).then((r) => r.status);

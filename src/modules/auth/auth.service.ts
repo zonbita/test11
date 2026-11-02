@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { JwtPayload } from '../../common/auth/auth.types';
 import { UserStatus } from '../../generated/tenant/enums';
+import { effectiveScope } from '../rbac/casbin/subjects';
 import { TenantDbService } from '../tenancy/tenant-db.service';
 import { LoginDto } from './dto/login.dto';
 import { assertNotLocked, invalidCredentials, LockoutPolicy, onFailedAttempt, RESET_LOCKOUT } from './login-lockout';
@@ -43,8 +44,9 @@ export class AuthService {
     return { accessToken: await this.jwt.signAsync(payload) };
   }
 
+  /** Profile + permissions per membership, for the UI to show/hide components. Casbin remains the only enforcement. */
   async me(userId: string) {
-    return this.tenantDb.client.user.findUniqueOrThrow({
+    const { memberships, ...user } = await this.tenantDb.client.user.findUniqueOrThrow({
       where: { id: userId },
       select: {
         id: true,
@@ -54,12 +56,36 @@ export class AuthService {
         status: true,
         mfaEnabled: true,
         memberships: {
+          orderBy: { createdAt: 'asc' },
           select: {
             company: { select: { id: true, legalName: true, status: true } },
-            role: { select: { id: true, key: true, name: true } },
+            role: {
+              select: {
+                id: true,
+                key: true,
+                name: true,
+                permissions: {
+                  orderBy: [{ permission: { resource: 'asc' } }, { permission: { action: 'asc' } }],
+                  select: { scope: true, permission: { select: { resource: true, action: true } } },
+                },
+              },
+            },
           },
         },
       },
     });
+
+    return {
+      ...user,
+      memberships: memberships.map(({ company, role: { permissions, ...role } }) => ({
+        company,
+        role,
+        permissions: permissions.map(({ scope, permission }) => ({
+          resource: permission.resource,
+          action: permission.action,
+          scope: effectiveScope(scope, company?.id ?? null),
+        })),
+      })),
+    };
   }
 }
