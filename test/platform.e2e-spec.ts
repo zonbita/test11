@@ -28,7 +28,7 @@ describe('Platform: tenants & Super Admin (F01)', () => {
       const res = await api.call('get', `/platform/api/v1/tenants/${tenant.id}`, { token });
       expect(res.status).toBe(200);
       expect(Object.keys(res.body)).not.toEqual(expect.arrayContaining(['db_password_enc']));
-      expect(JSON.stringify(res.body)).not.toMatch(/db_?password|db_?user|db_?host/i);
+      expect(JSON.stringify(res.body)).not.toMatch(/db_?password|db_?user|db_?host|db_?port|db_?name|db_?cluster/i);
 
       const { rows } = await withAdmin((c) =>
         c.query('SELECT 1 FROM pg_database WHERE datname = $1', [`tenant_e2e_${tenant.subdomain.replace(/-/g, '_')}`]),

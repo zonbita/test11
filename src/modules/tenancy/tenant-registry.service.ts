@@ -8,7 +8,10 @@ import { Tenant } from '../../generated/control/client';
 
 const CACHE_TTL_MS = 60_000;
 
-type TenantConnection = Pick<Tenant, 'dbHost' | 'dbPort' | 'dbName' | 'dbUser' | 'dbPasswordEnc'>;
+/** The only cluster today; its address is TENANT_DB_HOST / TENANT_DB_PORT of the running process. */
+export const DEFAULT_DB_CLUSTER = 'default';
+
+type TenantConnection = Pick<Tenant, 'dbCluster' | 'dbName' | 'dbUser' | 'dbPasswordEnc'>;
 
 /** Looks up tenants in the control plane and hands out the matching tenant DB client. */
 @Injectable()
@@ -42,7 +45,14 @@ export class TenantRegistryService {
   }
 
   connectionString(tenant: TenantConnection): string {
+    const { host, port } = this.clusterAddress(tenant.dbCluster);
     const password = decryptSecret(tenant.dbPasswordEnc, this.config.getOrThrow('DB_CREDENTIALS_KEY'));
-    return `postgresql://${encodeURIComponent(tenant.dbUser)}:${encodeURIComponent(password)}@${tenant.dbHost}:${tenant.dbPort}/${tenant.dbName}`;
+    return `postgresql://${encodeURIComponent(tenant.dbUser)}:${encodeURIComponent(password)}@${host}:${port}/${tenant.dbName}`;
+  }
+
+  /** Never falls back to another cluster: connecting a tenant to the wrong server must fail loudly. */
+  private clusterAddress(cluster: string): { host: string; port: number } {
+    if (cluster !== DEFAULT_DB_CLUSTER) throw new Error(`Unknown database cluster "${cluster}"`);
+    return { host: this.config.getOrThrow<string>('TENANT_DB_HOST'), port: this.config.getOrThrow<number>('TENANT_DB_PORT') };
   }
 }

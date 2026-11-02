@@ -5,8 +5,9 @@ model Tenant {
   status            TenantStatus @default(PROVISIONING)
   planId            String       @map("plan_id") @db.Uuid
   // Connection to the tenant's own database. Password is AES-256-GCM encrypted.
-  dbHost            String       @map("db_host")
-  dbPort            Int          @map("db_port")
+  // Logical cluster: host and port come from the environment at runtime, because the same
+  // PostgreSQL has a different address inside and outside a container (deviation from PRD ch.5).
+  dbCluster         String       @default("default") @map("db_cluster")
   dbName            String       @unique @map("db_name")
   dbUser            String       @unique @map("db_user")
   dbPasswordEnc     String       @map("db_password_enc")

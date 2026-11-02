@@ -126,6 +126,10 @@ Mỗi module: `*.module.ts`, `*.controller.ts`, `*.service.ts`, `dto/`.
 - Tenant xác định **chỉ** từ subdomain; JWT mang `tid` phải trùng (sai → 401 `WRONG_TENANT`).
 - Mỗi tenant: 1 database + 1 role Postgres riêng; role không CONNECT được DB khác hay DB trung tâm (test trong `isolation.e2e-spec.ts`).
   Mật khẩu DB mã hóa AES-256-GCM trong control DB.
+- Tenant chỉ lưu **cụm logic** `db_cluster` (hiện chỉ có `default`), không lưu host/port. Địa chỉ lấy lúc chạy từ `TENANT_DB_HOST` / `TENANT_DB_PORT`
+  của tiến trình đang chạy (`localhost` ngoài container, `postgres` trong docker compose), nên cùng dữ liệu chạy được cả trong lẫn ngoài container.
+  `db_cluster` không xác định → báo lỗi (API trả 500 chung, log ghi rõ), không tự rơi về `default`.
+  **Lệch PRD chương 5** (`TENANT_DB` có `host`) theo quyết định của người dùng: host là cấu hình hạ tầng, không phải dữ liệu của tenant.
 - Vòng đời (F01 BR-03): `PROVISIONING → ACTIVE ⇄ SUSPENDED → DELETED`, `PROVISIONING → FAILED → PROVISIONING` (retry); sai → 409.
   Muốn xóa một tenant đang ACTIVE phải tạm khóa (SUSPENDED) trước.
   `SUSPENDED` → mọi request 403 `TENANT_SUSPENDED`. Provisioning lỗi → dọn DB/role, trạng thái `FAILED` + `failure_reason`.
@@ -180,4 +184,5 @@ docker compose --profile app up -d --build   # postgres → job migrate (control
 | F03: tra cứu SIRET, cấu hình tenant (`tenant_settings`), logo, đổi định dạng số chứng từ                                                  | Bảng `number_sequences.format` đã sẵn                                              |
 | F06: phát hiện trùng, import CSV, ghi chú/hoạt động, chuyển khách hàng hàng loạt (`/customers/reassign`)                                  |                                                                                    |
 | F07–F12: sản phẩm, báo giá, hóa đơn, avoir, thanh toán, email/PDF                                                                         | Schema đã có (snapshot JSON, `lock_version`, đơn giá numeric(14,4))                |
+| Nhiều cụm DB: map tên cụm → địa chỉ (`TENANT_DB_CLUSTERS`) khi chia tenant sang nhiều cụm (NFR Scalability)                               | Hiện chỉ có cụm `default`                                                          |
 | Hạ tầng: PgBouncer trước Postgres, throttler storage Redis khi chạy nhiều instance, secrets manager cho khóa DB, Sentry/metrics           |                                                                                    |

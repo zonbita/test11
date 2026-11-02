@@ -29,7 +29,7 @@ export interface TenantCredentials {
 /** Real DB credentials of a tenant, read from the control plane (as the API would). */
 export async function tenantCredentials(subdomain: string): Promise<TenantCredentials> {
   const { rows } = await withControl((c) =>
-    c.query('SELECT id, db_name, db_user, db_password_enc, db_host, db_port FROM tenants WHERE subdomain = $1', [subdomain]),
+    c.query('SELECT id, db_name, db_user, db_password_enc FROM tenants WHERE subdomain = $1', [subdomain]),
   );
   const t = rows[0];
   return {
@@ -37,8 +37,9 @@ export async function tenantCredentials(subdomain: string): Promise<TenantCreden
     dbName: t.db_name,
     dbUser: t.db_user,
     password: decryptSecret(t.db_password_enc, process.env.DB_CREDENTIALS_KEY!),
-    host: t.db_host,
-    port: t.db_port,
+    // Address of the default cluster, as the API resolves it
+    host: process.env.TENANT_DB_HOST!,
+    port: Number(process.env.TENANT_DB_PORT ?? 5432),
   };
 }
 
@@ -53,7 +54,7 @@ export const withTenantDb = async <T>(subdomain: string, fn: (c: Client) => Prom
 export async function dropE2eDatabases() {
   await withAdmin(async (admin) => {
     const pattern = 'tenant\\_e2e\\_%';
-    const dbs = await admin.query(`SELECT datname FROM pg_database WHERE datname LIKE $1 OR datname = 'compte_control_e2e'`, [pattern]);
+    const dbs = await admin.query(`SELECT datname FROM pg_database WHERE datname LIKE $1 OR datname LIKE 'compte_control_e2e%'`, [pattern]);
     for (const { datname } of dbs.rows) await admin.query(`DROP DATABASE IF EXISTS "${datname}" WITH (FORCE)`);
     const roles = await admin.query('SELECT rolname FROM pg_roles WHERE rolname LIKE $1', [pattern]);
     for (const { rolname } of roles.rows) await admin.query(`DROP ROLE IF EXISTS "${rolname}"`);

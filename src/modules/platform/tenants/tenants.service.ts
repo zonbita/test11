@@ -93,8 +93,6 @@ export class TenantsService {
         subdomain: dto.subdomain,
         planId: plan.id,
         status: TenantStatus.PROVISIONING,
-        dbHost: this.config.getOrThrow('TENANT_DB_HOST'),
-        dbPort: this.config.getOrThrow<number>('TENANT_DB_PORT'),
         dbName: creds.dbName,
         dbUser: creds.dbUser,
         dbPasswordEnc: this.encrypt(creds.password),

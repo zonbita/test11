@@ -44,6 +44,7 @@ export class EnvironmentVariables {
   @IsNotEmpty()
   TENANT_DB_ADMIN_URL: string;
 
+  /** Address of the "default" tenant database cluster, as seen from this process (differs inside a container). */
   @IsString()
   @IsNotEmpty()
   TENANT_DB_HOST: string;
